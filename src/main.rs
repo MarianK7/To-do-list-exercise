@@ -37,6 +37,9 @@ fn main() {
                     .required(true),
             ),
         )
+        .subcommand(
+            App::new("delete_completed").about("Delete all completed tasks from the todo list"),
+        )
         .subcommand(App::new("list").about("List all of the tasks in the todo list"))
         .get_matches();
 
@@ -78,6 +81,13 @@ fn main() {
             match complete_task(&mut tasks, &filename, index) {
                 Ok(_) => println!("Completed task: {}", tasks[index].description),
                 Err(e) => eprintln!("Error completing task: {}", e),
+            }
+        }
+        ("delete_completed", Some(_)) => {
+            let initial_len = tasks.len();
+            match delete_completed(&mut tasks, &filename) {
+                Ok(_) => println!("Deleted {} completed tasks", initial_len - tasks.len()),
+                Err(e) => eprintln!("Error deleting completed tasks: {}", e),
             }
         }
         ("list", Some(_)) => {
@@ -152,6 +162,24 @@ fn complete_task(
         // Mark the task as completed and write to file
         tasks[index].completed = true;
         save_tasks(&filename, &tasks);
+    }
+
+    Ok(())
+}
+
+fn delete_completed(tasks: &mut Vec<Task>, filename: &str) -> Result<(), Box<dyn Error>> {
+    // Store the initial length of the vector before deletion
+    let initial_len = tasks.len();
+
+    // Use the retain method to remove all the completed tasks from the vector
+    tasks.retain(|task| !task.completed);
+
+    // If any completed tasks were removed, save the updated tasks to the file
+    if tasks.len() < initial_len {
+        save_tasks(filename, tasks);
+    } else {
+        // Otherwise, return an error message
+        return Err("No completed tasks to delete".into());
     }
 
     Ok(())
@@ -284,6 +312,55 @@ mod tests {
 
         // Check that the first task is completed
         assert_eq!(deserialized_tasks[0].completed, expected_tasks[0].completed);
+
+        // Delete the file
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn test_delete_completed() {
+        let filename = "test_delete_completed.json";
+        let mut tasks = vec![
+            Task {
+                description: "Task 1".to_string(),
+                completed: false,
+            },
+            Task {
+                description: "Task 2".to_string(),
+                completed: true,
+            },
+        ];
+
+        // Add a new task
+        add_task(&mut tasks, filename, "Task 3").unwrap();
+
+        // Complete added task
+        complete_task(&mut tasks, filename, 2).unwrap();
+
+        // Delete completed tasks
+        delete_completed(&mut tasks, filename).unwrap();
+
+        // Read the contents of the file and deserialize them into a vector of tasks
+        let file = File::open(filename).unwrap();
+        let deserialized_tasks: Vec<Task> = serde_json::from_reader(file).unwrap();
+
+        let expected_tasks = vec![Task {
+            description: "Task 1".to_string(),
+            completed: false,
+        }];
+
+        // Check that completed tasks are deleted
+        assert_eq!(deserialized_tasks.len(), expected_tasks.len());
+        // Check that the first task is not deleted
+        assert_eq!(
+            deserialized_tasks[0].description,
+            expected_tasks[0].description
+        );
+
+        // Check that function raises error when there are no completed tasks to delete
+        assert!(delete_completed(&mut tasks, filename).is_err());
+        // Check that no tasks are deleted
+        assert_eq!(deserialized_tasks.len(), expected_tasks.len());
 
         // Delete the file
         fs::remove_file(filename).unwrap();
