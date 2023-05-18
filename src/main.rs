@@ -37,6 +37,15 @@ fn main() {
                     .required(true),
             ),
         )
+        .subcommand(
+            App::new("delete")
+                .about("Delete a task from the todo list")
+                .arg(
+                    Arg::with_name("INDEX")
+                        .help("The index of the task to delete")
+                        .required(true),
+                ),
+        )
         .subcommand(App::new("list").about("List all of the tasks in the todo list"))
         .get_matches();
 
@@ -101,6 +110,21 @@ fn main() {
                 }
             }
         }
+        ("delete", Some(sub_m)) => {
+            let index = sub_m
+                .value_of("INDEX")
+                .unwrap()
+                .parse::<usize>()
+                .unwrap()
+                .checked_sub(1)
+                .expect("Index must be a positive integer");
+
+            // Delete the task
+            match delete_task(&mut tasks, &filename, index) {
+                Ok(_) => println!("Completed task: {}", tasks[index].description),
+                Err(e) => eprintln!("Error completing task: {}", e),
+            }
+        }
         _ => {
             // Print message if no subcommand was used
             println!("No subcommand was used, use -h, --help to see available subcommands");
@@ -154,6 +178,22 @@ fn complete_task(
         save_tasks(&filename, &tasks);
     }
 
+    Ok(())
+}
+
+fn delete_task(tasks: &mut Vec<Task>, filename: &str, index: usize) -> Result<(), Box<dyn Error>> {
+    // Check if task array is empty
+    if tasks.is_empty() {
+        return Err("No tasks to delete.".into());
+    }
+    // Check if index is valid
+    if index >= tasks.len() {
+        return Err("Index out of bounds".into());
+    }
+    // Remove task from array
+    let task = tasks.remove(index);
+    save_tasks(filename, tasks);
+    println!("Deleted task: {}", task.description);
     Ok(())
 }
 
@@ -284,6 +324,60 @@ mod tests {
 
         // Check that the first task is completed
         assert_eq!(deserialized_tasks[0].completed, expected_tasks[0].completed);
+
+        // Delete the file
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn test_delete_task() {
+        let filename = "test_delete.json";
+        let mut tasks = vec![
+            Task {
+                description: "Task 1".to_string(),
+                completed: false,
+            },
+            Task {
+                description: "Task 2".to_string(),
+                completed: true,
+            },
+        ];
+
+        // Add a new task
+        add_task(&mut tasks, filename, "Task 3").unwrap();
+
+        // Delete second task
+        delete_task(&mut tasks, filename, 1).unwrap();
+
+        // Read the contents of the file and deserialize them into a vector of tasks
+        let file = File::open(filename).unwrap();
+        let deserialized_tasks: Vec<Task> = serde_json::from_reader(file).unwrap();
+
+        let expected_tasks = vec![
+            Task {
+                description: "Task 1".to_string(),
+                completed: false,
+            },
+            Task {
+                description: "Task 3".to_string(),
+                completed: true,
+            },
+        ];
+
+        // Check that the first task is not deleted
+        assert_eq!(
+            deserialized_tasks[0].description,
+            expected_tasks[0].description
+        );
+        // Check that the added task is now deleted
+        assert_eq!(
+            deserialized_tasks[1].description,
+            expected_tasks[1].description
+        );
+        // Check the length of the tasks array
+        assert_eq!(deserialized_tasks.len(), 2);
+        // Test that the index is out of bounds
+        assert!(delete_task(&mut tasks, filename, 2).is_err());
 
         // Delete the file
         fs::remove_file(filename).unwrap();
